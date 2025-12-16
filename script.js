@@ -5,7 +5,7 @@ class SudokuGame {
         this.state = {
             mode: 'career',
             difficulty: 'medium',
-            level: 15,
+            level: 1,
             lives: 3,
             hints: 3,
             score: 0,
@@ -13,14 +13,15 @@ class SudokuGame {
             timerInterval: null,
             mistakes: 0,
             usedHints: 0,
-            careerProgress: 15,
+            careerProgress: 1,
             
             board: [],
             solution: [],
             prefilled: [],
             history: [],
             activeCell: null,
-            isSolving: false
+            isSolving: false,
+            errorCells: new Set() // Храним клетки с ошибками
         };
         
         // Настройки сложности
@@ -40,6 +41,7 @@ class SudokuGame {
         this.setupEventListeners();
         this.createNumberPad();
         this.loadState();
+        this.updateProgressBar();
         
         console.log('🎮 SUDO.ME запущен');
     }
@@ -48,8 +50,8 @@ class SudokuGame {
         const container = document.getElementById('fallingDigits');
         const digits = '123456789';
         
-        // Создаем 20 падающих цифр
-        for (let i = 0; i < 20; i++) {
+        // Создаем 15 падающих цифр
+        for (let i = 0; i < 15; i++) {
             const digit = document.createElement('div');
             digit.className = 'digit';
             digit.textContent = digits[Math.floor(Math.random() * digits.length)];
@@ -58,8 +60,8 @@ class SudokuGame {
             digit.style.left = Math.random() * 100 + 'vw';
             
             // Случайная скорость
-            const duration = 10 + Math.random() * 20;
-            const delay = Math.random() * 5;
+            const duration = 15 + Math.random() * 20;
+            const delay = Math.random() * 10;
             
             digit.style.animation = `fall ${duration}s linear ${delay}s infinite`;
             
@@ -93,13 +95,14 @@ class SudokuGame {
             currentMode: document.getElementById('currentMode'),
             currentLevel: document.getElementById('currentLevel'),
             gameTimer: document.getElementById('gameTimer'),
-            livesStat: document.getElementById('livesStat').querySelector('.stat-value'),
-            hintsStat: document.getElementById('hintsStat').querySelector('.stat-value'),
+            livesCount: document.getElementById('livesCount'),
+            hintsCount: document.getElementById('hintsCount'),
             
             hintBtn: document.getElementById('hintBtn'),
-            checkBtn: document.getElementById('checkBtn'),
-            undoBtn: document.getElementById('undoBtn'),
-            clearBtn: document.getElementById('clearBtn')
+            
+            // Прогресс в меню
+            careerProgressFill: document.getElementById('careerProgressFill'),
+            careerProgressText: document.getElementById('careerProgressText')
         };
         
         // Модальные окна
@@ -138,9 +141,6 @@ class SudokuGame {
         
         // Игровые кнопки
         this.elements.hintBtn.addEventListener('click', () => this.showHintModal());
-        this.elements.checkBtn.addEventListener('click', () => this.checkSolution());
-        this.elements.undoBtn.addEventListener('click', () => this.undoMove());
-        this.elements.clearBtn.addEventListener('click', () => this.clearCell());
         
         // Модальные окна
         this.modalButtons.nextLevel.addEventListener('click', () => this.nextLevel());
@@ -162,12 +162,14 @@ class SudokuGame {
         
         // Ресайз окна
         window.addEventListener('resize', () => this.handleResize());
-        window.addEventListener('orientationchange', () => this.handleResize());
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => this.handleResize(), 100);
+        });
     }
     
     handleResize() {
         // Обновляем размер клеток при изменении размера окна
-        const cellSize = Math.min(40, window.innerWidth / 10);
+        const cellSize = Math.min(44, Math.max(36, window.innerWidth / 10));
         document.documentElement.style.setProperty('--cell-size', `${cellSize}px`);
     }
     
@@ -229,6 +231,7 @@ class SudokuGame {
         this.state.usedHints = 0;
         this.state.time = 0;
         this.state.isSolving = false;
+        this.state.errorCells.clear();
         
         this.stopTimer();
         this.updateGameUI();
@@ -242,6 +245,20 @@ class SudokuGame {
             const cell = document.createElement('div');
             cell.className = 'sudoku-cell';
             cell.dataset.index = i;
+            
+            // Добавляем классы для утолщённых границ блоков 3x3
+            const row = Math.floor(i / 9);
+            const col = i % 9;
+            
+            // Правые границы для блоков 3x3 (колонки 2, 5)
+            if (col === 2 || col === 5) {
+                cell.classList.add('border-right-heavy');
+            }
+            
+            // Нижние границы для блоков 3x3 (строки 2, 5)
+            if (row === 2 || row === 5) {
+                cell.classList.add('border-bottom-heavy');
+            }
             
             const input = document.createElement('input');
             input.type = 'text';
@@ -387,6 +404,9 @@ class SudokuGame {
         if (number === 0) {
             input.value = '';
             this.state.activeCell.classList.remove('user-input');
+            
+            // Убираем ошибку если очистили клетку
+            this.clearError(index);
         } else {
             input.value = number;
             this.state.activeCell.classList.add('user-input');
@@ -407,11 +427,17 @@ class SudokuGame {
     }
     
     checkForErrors(index, number) {
-        if (number === 0) return;
+        if (number === 0) {
+            this.clearError(index);
+            return;
+        }
         
         const row = Math.floor(index / 9);
         const col = index % 9;
         let hasError = false;
+        
+        // Сначала очищаем старые ошибки для этой клетки
+        this.clearError(index);
         
         // Проверка строки
         for (let c = 0; c < 9; c++) {
@@ -455,10 +481,13 @@ class SudokuGame {
     markError(index) {
         const cell = this.elements.grid.children[index];
         cell.classList.add('error');
-        
-        setTimeout(() => {
-            cell.classList.remove('error');
-        }, 1500);
+        this.state.errorCells.add(index);
+    }
+    
+    clearError(index) {
+        const cell = this.elements.grid.children[index];
+        cell.classList.remove('error');
+        this.state.errorCells.delete(index);
     }
     
     loseLife() {
@@ -509,64 +538,12 @@ class SudokuGame {
         this.showToast('Подсказка использована', 'success');
     }
     
-    // ===== ПРОВЕРКА РЕШЕНИЯ =====
-    checkSolution() {
-        let hasErrors = false;
-        
-        for (let i = 0; i < 81; i++) {
-            if (this.state.board[i] !== 0 && this.state.board[i] !== this.state.solution[i]) {
-                this.elements.grid.children[i].classList.add('error');
-                hasErrors = true;
-            }
-        }
-        
-        if (!hasErrors) {
-            this.showToast('Все верно! Продолжайте', 'success');
-        } else {
-            this.showToast('Есть ошибки', 'error');
-        }
-    }
-    
-    // ===== ОТМЕНА ХОДА =====
-    undoMove() {
-        if (this.state.history.length === 0) {
-            this.showToast('Нет ходов для отмены', 'info');
-            return;
-        }
-        
-        const lastMove = this.state.history.pop();
-        const index = lastMove.index;
-        
-        this.state.board[index] = lastMove.previousValue;
-        
-        const cell = this.elements.grid.children[index];
-        const input = cell.querySelector('.cell-input');
-        
-        if (lastMove.previousValue === 0) {
-            input.value = '';
-            cell.classList.remove('user-input');
-        } else {
-            input.value = lastMove.previousValue;
-            cell.classList.add('user-input');
-        }
-        
-        cell.classList.remove('error');
-        
-        this.showToast('Ход отменен', 'info');
-    }
-    
-    clearCell() {
-        if (this.state.activeCell) {
-            this.inputNumber(0);
-        }
-    }
-    
     // ===== ЗАВЕРШЕНИЕ УРОВНЯ =====
     isPuzzleComplete() {
+        // Проверяем что все клетки заполнены и нет ошибок
         for (let i = 0; i < 81; i++) {
-            if (this.state.board[i] === 0 || this.state.board[i] !== this.state.solution[i]) {
-                return false;
-            }
+            if (this.state.board[i] === 0) return false;
+            if (this.state.board[i] !== this.state.solution[i]) return false;
         }
         return true;
     }
@@ -597,14 +574,18 @@ class SudokuGame {
         document.getElementById('completeHints').textContent = this.state.usedHints;
         document.getElementById('completeScore').textContent = levelScore;
         
-        // Для карьерного режима
+        // Для карьерного режима сохраняем прогресс
         if (this.state.mode === 'career') {
-            this.state.level++;
-            this.state.careerProgress = Math.max(this.state.careerProgress, this.state.level);
+            // Увеличиваем уровень только если он текущий
+            if (this.state.level === this.state.careerProgress) {
+                this.state.careerProgress++;
+            }
+            this.state.level = this.state.careerProgress;
         }
         
         // Сохранение
         this.saveState();
+        this.updateProgressBar();
         
         // Показ модального окна
         setTimeout(() => {
@@ -659,6 +640,7 @@ class SudokuGame {
     returnToMenu() {
         this.hideAllModals();
         this.showScreen('main');
+        this.updateProgressBar();
     }
     
     // ===== ТАЙМЕР =====
@@ -691,7 +673,21 @@ class SudokuGame {
             const input = cell.querySelector('.cell-input');
             const value = this.state.board[i];
             
-            cell.className = 'sudoku-cell';
+            // Сохраняем классы границ
+            const borderClasses = [];
+            if (cell.classList.contains('border-right-heavy')) {
+                borderClasses.push('border-right-heavy');
+            }
+            if (cell.classList.contains('border-bottom-heavy')) {
+                borderClasses.push('border-bottom-heavy');
+            }
+            
+            cell.className = 'sudoku-cell ' + borderClasses.join(' ');
+            
+            // Восстанавливаем ошибки если они есть
+            if (this.state.errorCells.has(i)) {
+                cell.classList.add('error');
+            }
             
             if (value !== 0) {
                 input.value = value;
@@ -815,9 +811,15 @@ class SudokuGame {
     }
     
     updateGameUI() {
-        this.elements.livesStat.textContent = this.state.lives;
-        this.elements.hintsStat.textContent = this.state.hints;
+        this.elements.livesCount.textContent = this.state.lives;
+        this.elements.hintsCount.textContent = this.state.hints;
         this.elements.gameTimer.textContent = this.formatTime(this.state.time);
+    }
+    
+    updateProgressBar() {
+        const progress = Math.min(100, (this.state.careerProgress / 100) * 100);
+        this.elements.careerProgressFill.style.width = `${progress}%`;
+        this.elements.careerProgressText.textContent = `Уровень ${this.state.careerProgress}`;
     }
     
     // ===== СОХРАНЕНИЕ СОСТОЯНИЯ =====
@@ -825,9 +827,11 @@ class SudokuGame {
         const saveData = {
             careerProgress: this.state.careerProgress,
             level: this.state.level,
-            score: this.state.score
+            score: this.state.score,
+            completedLevels: this.getCompletedLevels()
         };
         localStorage.setItem('sudoMeState', JSON.stringify(saveData));
+        console.log('💾 Состояние сохранено:', saveData);
     }
     
     loadState() {
@@ -835,13 +839,28 @@ class SudokuGame {
         if (saved) {
             try {
                 const data = JSON.parse(saved);
-                this.state.careerProgress = data.careerProgress || 15;
-                this.state.level = data.level || 15;
+                this.state.careerProgress = data.careerProgress || 1;
+                this.state.level = data.level || 1;
                 this.state.score = data.score || 0;
+                
+                console.log('📂 Состояние загружено:', data);
             } catch (e) {
                 console.warn('Ошибка загрузки сохранения:', e);
+                // Сбрасываем на начальные значения
+                this.state.careerProgress = 1;
+                this.state.level = 1;
+                this.state.score = 0;
             }
         }
+    }
+    
+    getCompletedLevels() {
+        // Возвращает массив пройденных уровней
+        const completed = [];
+        for (let i = 1; i < this.state.careerProgress; i++) {
+            completed.push(i);
+        }
+        return completed;
     }
     
     // ===== ОБРАБОТКА КЛАВИАТУРЫ =====
@@ -875,7 +894,7 @@ class SudokuGame {
         // Enter для проверки
         if (e.key === 'Enter') {
             e.preventDefault();
-            this.checkSolution();
+            this.checkComplete();
         }
         
         // Z для отмены (с Ctrl)
@@ -883,6 +902,46 @@ class SudokuGame {
             e.preventDefault();
             this.undoMove();
         }
+    }
+    
+    checkComplete() {
+        if (this.isPuzzleComplete()) {
+            this.completeLevel();
+        } else {
+            this.showToast('Ещё не все клетки заполнены', 'warning');
+        }
+    }
+    
+    undoMove() {
+        if (this.state.history.length === 0) {
+            this.showToast('Нет ходов для отмены', 'info');
+            return;
+        }
+        
+        const lastMove = this.state.history.pop();
+        const index = lastMove.index;
+        
+        this.state.board[index] = lastMove.previousValue;
+        
+        const cell = this.elements.grid.children[index];
+        const input = cell.querySelector('.cell-input');
+        
+        if (lastMove.previousValue === 0) {
+            input.value = '';
+            cell.classList.remove('user-input');
+        } else {
+            input.value = lastMove.previousValue;
+            cell.classList.add('user-input');
+        }
+        
+        // Проверяем ошибки после отмены
+        if (lastMove.newValue !== 0) {
+            this.checkForErrors(index, lastMove.previousValue);
+        } else {
+            this.clearError(index);
+        }
+        
+        this.showToast('Ход отменен', 'info');
     }
     
     navigateGrid(direction) {
