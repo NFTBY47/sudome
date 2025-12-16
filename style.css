@@ -11,14 +11,18 @@
     --color-success: #2ed573;
     --color-warning: #ffbe76;
     --color-danger: #ff6b6b;
+    --color-error: #ff4444;
     --color-text: #ffffff;
     --color-text-secondary: #999999;
     --color-border: #333333;
     --color-border-light: #444444;
+    --color-border-heavy: #222222;
     
     /* Размеры */
     --header-height: 60px;
-    --cell-size: 40px;
+    --cell-size: 11vw;
+    max-width: 44px;
+    min-width: 36px;
     --border-radius-sm: 6px;
     --border-radius-md: 10px;
     --border-radius-lg: 14px;
@@ -226,17 +230,32 @@ html, body {
 }
 
 .mode-progress {
-    flex-shrink: 0;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--color-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 3px;
+    transition: width var(--transition-slow);
 }
 
 .progress-text {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
     font-weight: 600;
-    padding: 4px 8px;
-    background: var(--color-bg);
-    border-radius: var(--border-radius-sm);
-    border: 1px solid var(--color-border);
+    white-space: nowrap;
 }
 
 .mode-arrow {
@@ -412,7 +431,7 @@ html, body {
 .game-stats {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
 }
 
 .stat-item {
@@ -451,23 +470,23 @@ html, body {
     min-height: 0;
 }
 
+/* ===== СЕТКА СУДОКУ С ЧЁТКИМИ БЛОКАМИ 3x3 ===== */
 .sudoku-grid {
     display: grid;
     grid-template-columns: repeat(9, 1fr);
     grid-template-rows: repeat(9, 1fr);
     gap: 0;
-    width: calc(var(--cell-size) * 9 + 8px);
-    height: calc(var(--cell-size) * 9 + 8px);
     background: var(--color-border);
     border: 2px solid var(--color-border);
     border-radius: var(--border-radius-md);
     overflow: hidden;
+    width: calc(var(--cell-size) * 9 + 8px);
+    height: calc(var(--cell-size) * 9 + 8px);
 }
 
 .sudoku-cell {
     width: var(--cell-size);
     height: var(--cell-size);
-    background: var(--color-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -476,28 +495,37 @@ html, body {
     font-weight: 600;
     cursor: pointer;
     user-select: none;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-border-light); /* Светлые линии внутри блоков */
     transition: all var(--transition-fast);
+    position: relative;
 }
 
-.sudoku-cell:nth-child(3n):not(:nth-child(9n)) {
-    border-right: 2px solid var(--color-border);
+/* Альтернирующие цвета для блоков 3x3 */
+.sudoku-cell.block-light {
+    background: var(--color-bg-card); /* Светлый фон */
 }
 
-.sudoku-cell:nth-child(n+19):nth-child(-n+27),
-.sudoku-cell:nth-child(n+46):nth-child(-n+54) {
-    border-bottom: 2px solid var(--color-border);
+.sudoku-cell.block-dark {
+    background: var(--color-bg-hover); /* Тёмный фон */
+}
+
+/* ТОЛСТЫЕ БЕЛЫЕ ЛИНИИ между блоками 3x3 */
+.sudoku-cell.border-right-heavy {
+    border-right: 3px solid var(--color-primary) !important; /* БЕЛАЯ толстая линия */
+}
+
+.sudoku-cell.border-bottom-heavy {
+    border-bottom: 3px solid var(--color-primary) !important; /* БЕЛАЯ толстая линия */
 }
 
 .sudoku-cell.active {
-    background: var(--color-bg-hover);
+    background: rgba(255, 255, 255, 0.15) !important;
     box-shadow: inset 0 0 0 2px var(--color-primary);
     z-index: 1;
 }
 
 .sudoku-cell.prefilled {
     color: var(--color-primary);
-    background: var(--color-bg-card);
 }
 
 .sudoku-cell.user-input {
@@ -506,12 +534,12 @@ html, body {
 }
 
 .sudoku-cell.error {
-    color: var(--color-danger) !important;
-    background: rgba(255, 107, 107, 0.1) !important;
+    color: var(--color-error) !important;
+    background: rgba(255, 68, 68, 0.2) !important;
 }
 
 .sudoku-cell.conflict {
-    background: rgba(255, 107, 107, 0.15) !important;
+    background: rgba(255, 68, 68, 0.25) !important;
 }
 
 .cell-input {
@@ -529,7 +557,7 @@ html, body {
     caret-color: transparent;
 }
 
-/* Панель управления */
+/* Панель управления - УПРОЩЕННАЯ */
 .game-controls {
     padding: 16px;
     background: var(--color-bg-card);
@@ -540,7 +568,7 @@ html, body {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .number-btn {
@@ -576,13 +604,13 @@ html, body {
 }
 
 .action-buttons {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    display: flex;
     gap: 8px;
 }
 
 .action-btn {
-    height: 44px;
+    flex: 1;
+    height: 50px;
     border-radius: var(--border-radius-md);
     border: 1px solid var(--color-border);
     background: var(--color-bg);
@@ -592,8 +620,8 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    font-size: 0.75rem;
+    gap: 8px;
+    font-size: 0.875rem;
     font-weight: 600;
 }
 
@@ -609,21 +637,6 @@ html, body {
 .action-btn.hint-btn:hover {
     border-color: var(--color-accent);
     color: var(--color-accent);
-}
-
-.action-btn.check-btn:hover {
-    border-color: var(--color-success);
-    color: var(--color-success);
-}
-
-.action-btn.undo-btn:hover {
-    border-color: var(--color-warning);
-    color: var(--color-warning);
-}
-
-.action-btn.clear-btn:hover {
-    border-color: var(--color-danger);
-    color: var(--color-danger);
 }
 
 /* ===== МОДАЛЬНЫЕ ОКНА ===== */
@@ -807,7 +820,7 @@ html, body {
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 380px) {
     :root {
-        --cell-size: 36px;
+        --cell-size: 10vw;
     }
     
     .main-content {
@@ -839,19 +852,15 @@ html, body {
         gap: 6px;
     }
     
-    .action-buttons {
-        gap: 6px;
-    }
-    
     .action-btn {
-        height: 40px;
-        font-size: 0.7rem;
+        height: 44px;
+        font-size: 0.8rem;
     }
 }
 
 @media (max-height: 700px) {
     :root {
-        --cell-size: 34px;
+        --cell-size: 9vw;
     }
     
     .main-screen {
@@ -914,8 +923,8 @@ html, body {
     }
     
     .sudoku-grid {
-        width: 320px;
-        height: 320px;
+        max-width: 320px;
+        max-height: 320px;
     }
     
     .sudoku-cell {
