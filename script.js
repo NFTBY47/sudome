@@ -21,7 +21,8 @@ class SudokuGame {
             history: [],
             activeCell: null,
             isSolving: false,
-            errorCells: new Set() // Храним клетки с ошибками
+            errorCells: new Set(), // Храним клетки с ошибками
+            conflictCells: new Set() // Храним конфликтные клетки
         };
         
         // Настройки сложности
@@ -102,7 +103,14 @@ class SudokuGame {
             
             // Прогресс в меню
             careerProgressFill: document.getElementById('careerProgressFill'),
-            careerProgressText: document.getElementById('careerProgressText')
+            careerProgressText: document.getElementById('careerProgressText'),
+            
+            // Элементы модального окна завершения
+            modalTitle: document.getElementById('levelCompleteModal').querySelector('.modal-title'),
+            completeTime: document.getElementById('completeTime'),
+            completeMistakes: document.getElementById('completeMistakes'),
+            completeHints: document.getElementById('completeHints'),
+            completeScore: document.getElementById('completeScore')
         };
         
         // Модальные окна
@@ -232,6 +240,7 @@ class SudokuGame {
         this.state.time = 0;
         this.state.isSolving = false;
         this.state.errorCells.clear();
+        this.state.conflictCells.clear();
         
         this.stopTimer();
         this.updateGameUI();
@@ -405,8 +414,8 @@ class SudokuGame {
             input.value = '';
             this.state.activeCell.classList.remove('user-input');
             
-            // Убираем ошибку если очистили клетку
-            this.clearError(index);
+            // При очистке клетки убираем ошибки
+            this.clearAllErrorsForCell(index);
         } else {
             input.value = number;
             this.state.activeCell.classList.add('user-input');
@@ -428,7 +437,7 @@ class SudokuGame {
     
     checkForErrors(index, number) {
         if (number === 0) {
-            this.clearError(index);
+            this.clearAllErrorsForCell(index);
             return;
         }
         
@@ -436,14 +445,15 @@ class SudokuGame {
         const col = index % 9;
         let hasError = false;
         
-        // Сначала очищаем старые ошибки для этой клетки
-        this.clearError(index);
+        // Временный набор для хранения всех конфликтных клеток
+        const newConflictCells = new Set();
         
+        // Сначала проверяем, нет ли уже такой цифры в строке, столбце или блоке
         // Проверка строки
         for (let c = 0; c < 9; c++) {
             const checkIndex = row * 9 + c;
             if (checkIndex !== index && this.state.board[checkIndex] === number) {
-                this.markError(checkIndex);
+                newConflictCells.add(checkIndex);
                 hasError = true;
             }
         }
@@ -452,7 +462,7 @@ class SudokuGame {
         for (let r = 0; r < 9; r++) {
             const checkIndex = r * 9 + col;
             if (checkIndex !== index && this.state.board[checkIndex] === number) {
-                this.markError(checkIndex);
+                newConflictCells.add(checkIndex);
                 hasError = true;
             }
         }
@@ -465,29 +475,150 @@ class SudokuGame {
             for (let c = startCol; c < startCol + 3; c++) {
                 const checkIndex = r * 9 + c;
                 if (checkIndex !== index && this.state.board[checkIndex] === number) {
-                    this.markError(checkIndex);
+                    newConflictCells.add(checkIndex);
                     hasError = true;
                 }
             }
         }
         
-        // Если есть ошибка, помечаем текущую ячейку и уменьшаем жизни
+        // Очищаем старые конфликты для текущей клетки
+        this.clearAllErrorsForCell(index);
+        
+        // Если есть конфликты, помечаем все конфликтные клетки
         if (hasError) {
-            this.markError(index);
+            // Добавляем текущую клетку в конфликты
+            newConflictCells.add(index);
+            
+            // Применяем все конфликты
+            this.applyConflicts(newConflictCells);
+            
+            // Уменьшаем жизни
             this.loseLife();
+        } else {
+            // Если нет ошибок, проверяем и очищаем возможные старые ошибки в связанных клетках
+            this.clearRelatedErrors(index);
         }
     }
     
-    markError(index) {
+    applyConflicts(conflictCells) {
+        // Сначала очищаем все старые конфликты
+        this.state.conflictCells.forEach(oldIndex => {
+            if (!conflictCells.has(oldIndex)) {
+                this.clearCellError(oldIndex);
+            }
+        });
+        
+        // Применяем новые конфликты
+        conflictCells.forEach(index => {
+            this.markCellError(index);
+        });
+        
+        // Обновляем набор конфликтных клеток
+        this.state.conflictCells = conflictCells;
+    }
+    
+    markCellError(index) {
         const cell = this.elements.grid.children[index];
         cell.classList.add('error');
         this.state.errorCells.add(index);
     }
     
-    clearError(index) {
+    clearCellError(index) {
         const cell = this.elements.grid.children[index];
         cell.classList.remove('error');
         this.state.errorCells.delete(index);
+    }
+    
+    clearAllErrorsForCell(index) {
+        // Очищаем ошибку в самой клетке
+        this.clearCellError(index);
+        
+        // Удаляем из конфликтных клеток
+        this.state.conflictCells.delete(index);
+        
+        // Проверяем остальные конфликтные клетки - возможно, теперь они не конфликтуют
+        const newConflictCells = new Set();
+        this.state.conflictCells.forEach(conflictIndex => {
+            const conflictValue = this.state.board[conflictIndex];
+            if (conflictValue !== 0 && this.hasConflicts(conflictIndex, conflictValue)) {
+                newConflictCells.add(conflictIndex);
+            }
+        });
+        
+        // Обновляем конфликты
+        this.applyConflicts(newConflictCells);
+    }
+    
+    clearRelatedErrors(index) {
+        const row = Math.floor(index / 9);
+        const col = index % 9;
+        const value = this.state.board[index];
+        
+        if (value === 0) return;
+        
+        // Проверяем строку, столбец и блок на наличие старых ошибок
+        for (let c = 0; c < 9; c++) {
+            const checkIndex = row * 9 + c;
+            if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                this.clearAllErrorsForCell(checkIndex);
+            }
+        }
+        
+        for (let r = 0; r < 9; r++) {
+            const checkIndex = r * 9 + col;
+            if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                this.clearAllErrorsForCell(checkIndex);
+            }
+        }
+        
+        const startRow = Math.floor(row / 3) * 3;
+        const startCol = Math.floor(col / 3) * 3;
+        for (let r = startRow; r < startRow + 3; r++) {
+            for (let c = startCol; c < startCol + 3; c++) {
+                const checkIndex = r * 9 + c;
+                if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                    this.clearAllErrorsForCell(checkIndex);
+                }
+            }
+        }
+    }
+    
+    hasConflicts(index, value) {
+        if (value === 0) return false;
+        
+        const row = Math.floor(index / 9);
+        const col = index % 9;
+        
+        // Проверка строки
+        for (let c = 0; c < 9; c++) {
+            const checkIndex = row * 9 + c;
+            if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                return true;
+            }
+        }
+        
+        // Проверка столбца
+        for (let r = 0; r < 9; r++) {
+            const checkIndex = r * 9 + col;
+            if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                return true;
+            }
+        }
+        
+        // Проверка блока 3x3
+        const startRow = Math.floor(row / 3) * 3;
+        const startCol = Math.floor(col / 3) * 3;
+        
+        for (let r = startRow; r < startRow + 3; r++) {
+            for (let c = startCol; c < startCol + 3; c++) {
+                const checkIndex = r * 9 + c;
+                if (checkIndex !== index && this.state.board[checkIndex] === value) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
     
     loseLife() {
@@ -568,11 +699,18 @@ class SudokuGame {
         
         this.state.score += Math.max(levelScore, 100);
         
+        // Обновление текста в модальном окне в зависимости от режима
+        if (this.state.mode === 'career') {
+            this.elements.modalTitle.textContent = `Уровень ${this.state.level} пройден!`;
+        } else {
+            this.elements.modalTitle.textContent = 'Поздравляем! Головоломка решена!';
+        }
+        
         // Обновление статистики в модальном окне
-        document.getElementById('completeTime').textContent = this.formatTime(this.state.time);
-        document.getElementById('completeMistakes').textContent = this.state.mistakes;
-        document.getElementById('completeHints').textContent = this.state.usedHints;
-        document.getElementById('completeScore').textContent = levelScore;
+        this.elements.completeTime.textContent = this.formatTime(this.state.time);
+        this.elements.completeMistakes.textContent = this.state.mistakes;
+        this.elements.completeHints.textContent = this.state.usedHints;
+        this.elements.completeScore.textContent = levelScore;
         
         // Для карьерного режима сохраняем прогресс
         if (this.state.mode === 'career') {
@@ -611,6 +749,8 @@ class SudokuGame {
         this.state.time = 0;
         this.state.mistakes = 0;
         this.state.usedHints = 0;
+        this.state.errorCells.clear();
+        this.state.conflictCells.clear();
         
         // Генерация нового судоку
         this.generateSudoku();
@@ -631,6 +771,8 @@ class SudokuGame {
         this.state.time = 0;
         this.state.mistakes = 0;
         this.state.usedHints = 0;
+        this.state.errorCells.clear();
+        this.state.conflictCells.clear();
         
         this.generateSudoku();
         this.updateGameUI();
@@ -929,16 +1071,13 @@ class SudokuGame {
         if (lastMove.previousValue === 0) {
             input.value = '';
             cell.classList.remove('user-input');
+            // Очищаем ошибки при отмене
+            this.clearAllErrorsForCell(index);
         } else {
             input.value = lastMove.previousValue;
             cell.classList.add('user-input');
-        }
-        
-        // Проверяем ошибки после отмены
-        if (lastMove.newValue !== 0) {
+            // Проверяем ошибки после отмены
             this.checkForErrors(index, lastMove.previousValue);
-        } else {
-            this.clearError(index);
         }
         
         this.showToast('Ход отменен', 'info');
